@@ -1,0 +1,10 @@
+[requires]
+manapihttp/0.0.2
+
+[generators]
+CMakeDeps
+CMakeToolchain
+
+[options]
+manapihttp/*:shared=True
+manapihttp/*:lib=True
