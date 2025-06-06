@@ -9,6 +9,8 @@ for creating bots in the Max Messanger on C++.
 
 ## Example
 
+![alt](./assets/1.png)
+
 ```c++
 #include <iostream>
 
