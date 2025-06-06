@@ -6,7 +6,7 @@ from conan.errors import ConanInvalidConfiguration
 from conan.tools.files import copy
 
 class MaxBotConan(ConanFile):
-    name = "maxbot"
+    name = "maxbotcpp"
     description = "maxbot communication toolkit"
     version = "0.0.1"
 

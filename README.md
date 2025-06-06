@@ -1,6 +1,18 @@
+# MaxBot Header-Only
+
+## Introduction
+This is a header-only (one file) library
+for creating bots in the Max Messanger on C++.
+
+## Dependency
+- Manapi Http (with Fetch)
+
+## Example
+
+```c++
 #include <iostream>
 
-#include "MaxBot.hpp"
+#include <MaxBot.hpp>
 
 static manapi::Atomic<std::string> openrouter_key = "";
 
@@ -19,7 +31,7 @@ int main() {
     });
 
     ctx->run(ctx, 0, [] (auto cb) -> void {
-        auto maxbot = manapi::maxbot("f9LHodD0cOIHG8JGkZfOHGJcmca8W3XyBisVNRAe8807wYWWej-FW0_3HUsFQyNudASyh8EaA9KFEG9B8WGX");
+        auto maxbot = manapi::maxbot("maxbotkey");
 
         manapi::async::run ([maxbot] () mutable noexcept(true)
             -> manapi::future<> {
@@ -135,17 +147,10 @@ int main() {
 
             maxbot.bind(500);
 
-        },
-        [] (std::exception_ptr err)
-            -> void {
-            if (err) {
-                std::string msg;
-                manapi::rethrow_exception_ptr(std::move(err), nullptr, &msg, nullptr);
-                std::cerr << msg << "\n";
-            }
         });
 
         cb();
     });
     return 0;
 }
+```
