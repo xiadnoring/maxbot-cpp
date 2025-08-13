@@ -1136,10 +1136,12 @@ namespace manapi {
 
                         purl += '&';
 
-                        auto fetch = (co_await manapi::net::fetch2::fetch(generate_url_(data_, purl), {
+                        auto fetch_res = co_await manapi::net::fetch2::fetch(generate_url_(data_, purl), manapi::json {
                             {"method", "GET"},
                             {"timeout", timeout}
-                        })).unwrap();
+                        });
+
+                        auto fetch = fetch_res.unwrap();
 
                         if (!fetch.ok()) {
                             manapi_log_trace(manapi::debug::LOG_TRACE_HIGH,
