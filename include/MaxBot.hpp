@@ -1146,7 +1146,8 @@ namespace manapi {
                         if (!fetch.ok()) {
                             manapi_log_trace(manapi::debug::LOG_TRACE_HIGH,
                                 "%s:%s failed due to %zu", "maxbot", "connection", fetch.status());
-                            goto err;
+                            t.again(ms_);
+                            co_return;
                         }
 
                         auto remained = (co_await fetch.json()).unwrap();
@@ -1164,8 +1165,6 @@ namespace manapi {
                     catch (std::exception const &e) {
                         manapi_log_error("maxbot: long polling failed due to %s. Retrying...", e.what());
                     }
-err:
-                    t.again(ms_);
             });
 
             if (!res)
