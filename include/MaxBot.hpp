@@ -1120,46 +1120,43 @@ namespace manapi {
 
     inline manapi::error::status maxbot::bind(std::size_t ms, std::size_t limit) MANAPIHTTP_NOEXCEPT {
         try {
-            int64_t marker = -1;
             auto res = manapi::async::current()->timerpool()->append_timer_async(ms,
-                [data_ = this->data, ms_ = ms, marker, limit] (manapi::timer t) mutable
+                [data_ = this->data, ms_ = ms, marker = std::optional<int64_t>{}, limit] (manapi::timer t) mutable
                 -> manapi::future<> {
                     try {
                         int timeout = 90;
 
                         std::string purl = std::format("/updates?timeout={}", timeout);
 
-                        if (marker >= 0)
-                            purl.append(std::format("&marker={}", marker));
+                        if (marker.has_value())
+                            purl.append(std::format("&marker={}", marker.value()));
 
                         if (limit)
                             purl.append(std::format("&limit={}", limit));
 
                         purl += '&';
 
-                        auto fetch_res = co_await manapi::net::fetch2::fetch(generate_url_(data_, purl), manapi::json {
+                        auto fetch_res = co_await manapi::net::fetch2::fetch(generate_url_(data_, purl), {
                             {"method", "GET"},
                             {"timeout", timeout}
                         });
-
-                        auto fetch = fetch_res.unwrap();
+                        auto fetch = (fetch_res).unwrap();
 
                         if (!fetch.ok()) {
                             manapi_log_trace(manapi::debug::LOG_TRACE_HIGH,
                                 "%s:%s failed due to %zu", "maxbot", "connection", fetch.status());
-                            t.again(ms_);
-                            co_return;
+                            goto err;
                         }
 
-                        auto remained_resp = co_await fetch.json();
-                        auto remained = remained_resp.unwrap();
+                        auto remained_res = co_await fetch.json();
+                        auto remained = (remained_res).unwrap();
 
                         auto const marker_it = remained.as_object().find("marker");
                         if (marker_it != remained.as_object().end()
                             && marker_it->second.is_integer())
                             marker = marker_it->second.as_integer();
                         else
-                            marker = -1;
+                            marker = {};
 
 
                         manapi::async::run(maxbot::handle_updates_(data_, std::move(remained["updates"])));
@@ -1167,6 +1164,8 @@ namespace manapi {
                     catch (std::exception const &e) {
                         manapi_log_error("maxbot: long polling failed due to %s. Retrying...", e.what());
                     }
+err:
+                    t.again(ms_);
             });
 
             if (!res)
