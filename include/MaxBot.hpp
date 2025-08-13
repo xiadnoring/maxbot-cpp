@@ -1120,7 +1120,7 @@ namespace manapi {
 
     inline manapi::error::status maxbot::bind(std::size_t ms, std::size_t limit) MANAPIHTTP_NOEXCEPT {
         try {
-            std::optional<int64_t> marker;
+            int64_t marker = -1;
             auto res = manapi::async::current()->timerpool()->append_timer_async(ms,
                 [data_ = this->data, ms_ = ms, marker, limit] (manapi::timer t) mutable
                 -> manapi::future<> {
@@ -1129,8 +1129,8 @@ namespace manapi {
 
                         std::string purl = std::format("/updates?timeout={}", timeout);
 
-                        if (marker.has_value())
-                            purl.append(std::format("&marker={}", marker.value()));
+                        if (marker >= 0)
+                            purl.append(std::format("&marker={}", marker));
 
                         if (limit)
                             purl.append(std::format("&limit={}", limit));
@@ -1159,7 +1159,7 @@ namespace manapi {
                             && marker_it->second.is_integer())
                             marker = marker_it->second.as_integer();
                         else
-                            marker.reset();
+                            marker = -1;
 
 
                         manapi::async::run(maxbot::handle_updates_(data_, std::move(remained["updates"])));
