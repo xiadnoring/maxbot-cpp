@@ -1120,8 +1120,9 @@ namespace manapi {
 
     inline manapi::error::status maxbot::bind(std::size_t ms, std::size_t limit) MANAPIHTTP_NOEXCEPT {
         try {
+            std::optional<int64_t> marker;
             auto res = manapi::async::current()->timerpool()->append_timer_async(ms,
-                [data_ = this->data, ms_ = ms, marker = std::optional<int64_t>{}, limit] (manapi::timer t) mutable
+                [data_ = this->data, ms_ = ms, marker, limit] (manapi::timer t) mutable
                 -> manapi::future<> {
                     try {
                         int timeout = 90;
@@ -1150,14 +1151,15 @@ namespace manapi {
                             co_return;
                         }
 
-                        auto remained = (co_await fetch.json()).unwrap();
+                        auto remained_resp = co_await fetch.json();
+                        auto remained = remained_resp.unwrap();
 
                         auto const marker_it = remained.as_object().find("marker");
                         if (marker_it != remained.as_object().end()
                             && marker_it->second.is_integer())
                             marker = marker_it->second.as_integer();
                         else
-                            marker = {};
+                            marker.reset();
 
 
                         manapi::async::run(maxbot::handle_updates_(data_, std::move(remained["updates"])));
