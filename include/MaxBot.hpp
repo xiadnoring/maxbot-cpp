@@ -1124,7 +1124,7 @@ namespace manapi {
                 [data_ = this->data, ms_ = ms, marker = std::optional<int64_t>{}, limit] (manapi::timer t) mutable
                 -> manapi::future<> {
                     try {
-                        int timeout = 90;
+                        int timeout = 10;
 
                         std::string purl = std::format("/updates?timeout={}", timeout);
 
@@ -1165,7 +1165,7 @@ namespace manapi {
                         manapi_log_error("maxbot: long polling failed due to %s. Retrying...", e.what());
                     }
 err:
-                    t.again(ms_);
+                    t.again(ms_).unwrap();
             });
 
             if (!res)
