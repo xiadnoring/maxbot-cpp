@@ -12,12 +12,14 @@ int main() {
     auto ctx = manapi::async::context::create(2).unwrap();
     ctx->eventloop()->setup_handle_interrupt();
 
-    ctx->run(ctx, 0, [] (auto cb) -> void {
+    auto server_ctx = manapi::net::http::server_ctx::create().unwrap();
+
+    ctx->run(ctx, 0, [server_ctx] (auto cb) -> void {
         manapi::maxbot maxbot;
 
         std::set<size_t> states;
 
-        manapi::async::run ([&states, maxbot] () mutable MANAPIHTTP_NOEXCEPT
+        manapi::async::run ([&states, maxbot, server_ctx] () mutable MANAPIHTTP_NOEXCEPT
             -> manapi::future<> {
             auto resread = co_await manapi::filesystem::async_read("../trash/config.json");
             manapi::json config = manapi::json::parse(
@@ -154,8 +156,10 @@ int main() {
                 co_return true;
             });
 
-            maxbot.bind(500).unwrap();
-
+            auto res = co_await maxbot.bind(server_ctx, "127.0.0.1", "8888", {
+                {"site", "http://127.0.0.1:8888"}
+            });
+            res.unwrap();
         });
 
         cb();

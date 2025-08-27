@@ -1,9 +1,11 @@
 #pragma once
 
 #include <manapihttp/ManapiHttp.hpp>
-#include <manapihttp/ManapiFilesystem.hpp>
-#include <manapihttp/services/ManapiFetch2.hpp>
-#include <manapihttp/ManapiJson.hpp>
+#include <manapihttp/ManapiFetch2.hpp>
+#include <manapihttp/json/ManapiJson.hpp>
+#include <manapihttp/fs/ManapiFilesystem.hpp>
+#include <manapihttp/std/ManapiEasyCancellation.hpp>
+#include <manapihttp/ManapiString.hpp>
 
 #define MANAPI_MAXBOT_STATUS_WRAP(n__) auto response = co_await n__; if (!response) { co_return response.err(); } \
 co_return manapi::json::parse(response.unwrap());
@@ -250,8 +252,11 @@ namespace manapi {
 
         struct data_t {
             std::string token;
+            std::string webhook;
             manapi::timer timer;
             std::map<std::string, std::map<std::size_t, std::unique_ptr<action_cb_t>>> handlers;
+            std::unique_ptr<manapi::net::http::server> server;
+            std::size_t finish_id;
         };
 
         maxbot (std::shared_ptr<maxbot::data_t> data);
@@ -316,16 +321,39 @@ namespace manapi {
          * @param cancellation Токен отмены
          */
 
-        void on (std::string action, action_cb_t callback, manapi::async::cancellation_action cancellation = nullptr);
+        manapi::error::status on (std::string action, action_cb_t callback, manapi::async::cancellation_action cancellation = nullptr) MANAPIHTTP_NOEXCEPT;
 
         void token (std::string token);
 
-        void bind (std::string ip, std::string port);
+        manapi::future<manapi::error::status> bind (manapi::net::http::server_ctx ctx, std::string path);
+
+        /**
+         * Creates a WebHook
+         *
+         * @param ctx Http Ctx
+         * @param config Params { "prefix": string|none (default=recv), "secret": string|none, "site": string (example=https://example.com), "unsubscribe": bool|none(default=true) }
+         * @param http_cnf Http Config
+         * @return
+         */
+        manapi::future<manapi::error::status> bind (manapi::net::http::server_ctx ctx, manapi::json config, manapi::json http_cnf);
+
+        /**
+         * Creates a WebHook
+         *
+         * @param ctx Http Ctx
+         * @param addr IP address
+         * @param port IP port
+         * @param config Params { "prefix": string|none (default=recv), "secret": string|none, "site": string (example=https://example.com), "unsubscribe": bool|none(default=true) }
+         * @return
+         */
+        manapi::future<manapi::error::status> bind (manapi::net::http::server_ctx ctx, std::string addr, std::string port, manapi::json config);
 
         manapi::error::status bind (std::size_t ms = 0, std::size_t limit = 100) MANAPIHTTP_NOEXCEPT;
 
-        void stop ();
+        manapi::error::status stop () MANAPIHTTP_NOEXCEPT;
 
+        manapi::future<manapi::error::status> stop_and_wait (manapi::async::cancellation_action cancellation = nullptr);
+        
         /**
          * Возвращает информацию о текущем боте,
          * который идентифицируется с помощью токена доступа.
@@ -350,7 +378,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<manapi::json>> me (manapi::async::cancellation_action cancellation = nullptr);
 
@@ -389,7 +417,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
 
         manapi::future<manapi::error::status_or<manapi::json>> me (manapi::json meta, manapi::async::cancellation_action cancellation = nullptr);
@@ -413,7 +441,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
 
         manapi::future<manapi::error::status_or<manapi::json>> chats (int count = 50, ssize_t marker = 1, manapi::async::cancellation_action cancellation = nullptr);
@@ -448,7 +476,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
 
         manapi::future<manapi::error::status_or<manapi::json>> chat (std::string link, manapi::async::cancellation_action cancellation = nullptr);
@@ -482,7 +510,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<manapi::json>> chat (ssize_t chat_id, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -527,7 +555,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<manapi::json>> chat (ssize_t chat_id, manapi::json data, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -539,7 +567,7 @@ namespace manapi {
          * @return pair обьект, где первое принимает значение true, если запрос был успешным, false в противном случае,
          *  а второе объяснительное сообщение, если результат не был успешным
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<response_status_t>> remove_chat (ssize_t chat_id, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -559,7 +587,7 @@ namespace manapi {
          * @return pair обьект, где первое принимает значение true, если запрос был успешным, false в противном случае,
          *  а второе объяснительное сообщение, если результат не был успешным
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<response_status_t>> status_chat (ssize_t chat_id, std::string action, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -578,7 +606,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<manapi::json>>  pinned_msg (ssize_t chat_id, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -593,7 +621,7 @@ namespace manapi {
          * @return pair обьект, где первое принимает значение true, если запрос был успешным, false в противном случае,
          *  а второе объяснительное сообщение, если результат не был успешным
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<response_status_t>> pin_msg (ssize_t chat_id, std::string message_id, bool notify = true, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -605,7 +633,7 @@ namespace manapi {
          * @return pair обьект, где первое принимает значение true, если запрос был успешным, false в противном случае,
          *  а второе объяснительное сообщение, если результат не был успешным
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<response_status_t>> unpin_msg (ssize_t chat_id, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -649,7 +677,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<manapi::json>>  permissions (ssize_t chat_id, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -662,7 +690,7 @@ namespace manapi {
          * @return pair обьект, где первое принимает значение true, если запрос был успешным, false в противном случае,
          *  а второе объяснительное сообщение, если результат не был успешным
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<response_status_t>> leave (ssize_t chat_id, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -682,7 +710,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<manapi::json>>  admins (ssize_t chat_id, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -703,7 +731,7 @@ namespace manapi {
          * @return pair обьект, где первое принимает значение true, если запрос был успешным, false в противном случае,
          *  а второе объяснительное сообщение, если результат не был успешным
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<response_status_t>> add_admins (ssize_t chat_id, manapi::json data, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -716,7 +744,7 @@ namespace manapi {
          * @return pair обьект, где первое принимает значение true, если запрос был успешным, false в противном случае,
          *  а второе объяснительное сообщение, если результат не был успешным
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<response_status_t>> remove_admin (ssize_t chat_id, int64_t user_id, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -745,7 +773,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<manapi::json>>  members (ssize_t chat_id, manapi::json data, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -766,7 +794,7 @@ namespace manapi {
          * @return pair обьект, где первое принимает значение true, если запрос был успешным, false в противном случае,
          *  а второе объяснительное сообщение, если результат не был успешным
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<response_status_t>> add_members (ssize_t chat_id, manapi::json data, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -780,7 +808,7 @@ namespace manapi {
          * @return pair обьект, где первое принимает значение true, если запрос был успешным, false в противном случае,
          *  а второе объяснительное сообщение, если результат не был успешным
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<response_status_t>> remove_member (ssize_t chat_id, int64_t user_id, bool block = false, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -797,7 +825,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<manapi::json>>  subscriptions (manapi::async::cancellation_action cancellation = nullptr);
 
@@ -811,11 +839,12 @@ namespace manapi {
          * @param url URL HTTP(S)-эндпойнта вашего бота. Должен начинаться с http(s)://
          * @param update_types Пример: ["message_created", "bot_started"] Список типов обновлений, которые ваш бот хочет получать.
          * @param cancellation Токен отмены
+         * @param secret от 5 до 256 символов. Cекрет, который должен быть отправлен в заголовке X-Max-Bot-Api-Secret в каждом запросе Webhook. Разрешены только символы A-Z, a-z, 0-9, и дефис. Заголовок рекомендован, чтобы запрос поступал из установленного веб-узла
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
-        manapi::future<manapi::error::status_or<response_status_t>> subscribe (std::string url, std::vector<std::string> update_types, manapi::async::cancellation_action cancellation = nullptr);
+        manapi::future<manapi::error::status_or<response_status_t>> subscribe (std::string url, std::vector<std::string> update_types, std::string secret = {}, manapi::async::cancellation_action cancellation = nullptr);
 
         /**
          * Отписывает бота от получения обновлений через WebHook.
@@ -827,7 +856,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<response_status_t>> unsubscribe (std::string url, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -864,7 +893,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<manapi::json>>  recv_updates (manapi::json data, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -875,7 +904,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<std::string>> url_to_upload (std::string type, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -910,7 +939,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<manapi::json>>  get_messages (manapi::json data, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -947,7 +976,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<manapi::json>>  send_message (int64_t user_id, int64_t chat_id, manapi::json data, bool disable_link_preview = false, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -979,7 +1008,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<response_status_t>> edit_message (std::string message_id, manapi::json data, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -991,7 +1020,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<response_status_t>> remove_message (std::string message_id, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -1014,7 +1043,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<manapi::json>>  get_messages (std::string message_id, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -1038,7 +1067,7 @@ namespace manapi {
          * @param cancellation Токен отмены
          * @return
          *
-         * @exception manapi::exception Default Manapi Exception
+         * 
          */
         manapi::future<manapi::error::status_or<manapi::json>>  about_video (std::string video_token, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -1102,24 +1131,206 @@ namespace manapi {
 
     inline maxbot::~maxbot() = default;
 
-    inline void maxbot::on(std::string action, action_cb_t callback, manapi::async::cancellation_action cancellation) {
-        auto stored = std::make_unique<action_cb_t>(std::move(callback));
-        auto &handlers = this->data->handlers[action];
-        auto key = reinterpret_cast<std::size_t>(stored.get());
-        auto it = handlers.insert({key, std::move(stored)});
-        assert((it.second && "DUDE? HOW?!"));
+    inline manapi::error::status maxbot::on(std::string action, action_cb_t callback, manapi::async::cancellation_action cancellation) MANAPIHTTP_NOEXCEPT {
+        try {
+            auto stored = std::make_unique<action_cb_t>(std::move(callback));
+            auto &handlers = this->data->handlers[action];
+            auto key = reinterpret_cast<std::size_t>(stored.get());
+            auto it = handlers.insert({key, std::move(stored)});
+            if (!it.second)
+                return error::status_internal("maxbot:memory corruption");
+            return error::status_ok();
+        }
+        catch (...) {
+            return error::status_resource_exhausted();
+        }
     }
 
     inline void maxbot::token(std::string token) {
         this->data->token = std::move(token);
     }
+    //
+    // inline manapi::future<manapi::error::status> maxbot::bind(manapi::net::http::server_ctx ctx, std::string ip, std::string port, std::string path) {
+    //     co_return co_await this->bind(std::move(ctx), {
+    //         {"pools", {
+    //             {"address", std::move(ip)},
+    //             {"port", std::move(port)},
+    //             {"http", manapi::json::array({"1.1"})},
+    //             {"transport", "tcp"}
+    //         }}
+    //     }, std::move(path));
+    // }
 
-    inline void maxbot::bind(std::string ip, std::string port) {
+    inline manapi::future<manapi::error::status> maxbot::bind(manapi::net::http::server_ctx ctx, std::string file) {
+        if (this->data->server || this->data->timer)
+            co_return error::status_already_exists("maxbot:instance is already running");
+        auto data_res = co_await manapi::filesystem::async_read(std::move(file), ev::FS_O_RDONLY, -1, manapi::async::timeout_cancellation (25000));
+        if (!data_res)
+            co_return data_res.err();
+        auto json_res = manapi::json::parse(data_res.unwrap());
+        if (!json_res)
+            co_return json_res.err();
+        auto data = json_res.unwrap();
+        if (!data.is_object())
+            co_return error::status_invalid_argument("maxbot:Data isn't an object");
+        manapi::json http;
+        manapi::json webhook;
+        auto it = data.find("http");
+        if (it != data.end<json::OBJECT>() && it->second.is_object()) {
+            http = std::move(it->second.as_object());
+        }
+        else {
+            co_return error::status_invalid_argument("maxbot:param 'http' is required");
+        }
+        it = data.find("webhook");
+        if (it != data.end<json::OBJECT>() && it->second.is_object()) {
+            webhook = std::move(it->second);
+        }
+        else {
+            co_return error::status_invalid_argument("maxbot:param 'webhook' is required");
+        }
+        co_return co_await this->bind(std::move(ctx), std::move(webhook), std::move(http));
+    }
 
+    inline manapi::future<manapi::error::status> maxbot::bind(manapi::net::http::server_ctx ctx, manapi::json config, manapi::json http_cnf) {
+        if (this->data->server || this->data->timer)
+            co_return error::status_already_exists("maxbot:instance is already running");
+        manapi::error::status res;
+        try {
+            using http = manapi::net::http::server;
+
+            if (!config.is_object())
+                co_return error::status_invalid_argument("maxbot(webhook):config must be object");
+
+            std::string path;
+            std::string site;
+            std::string secret;
+            bool subscription_unsubscribe{true};
+            bool subscription_management{false};
+
+            auto it = config.find("path");
+            if (it == config.end<json::OBJECT>() || !it->second.is_string())
+                path = "recv";
+            else
+                path = std::move(it->second.as_string());
+
+            if (!path.empty() && path.back() != '/')
+                path.push_back('/');
+
+            while (!path.empty() && path.front() == '/')
+                path = path.substr(1);
+
+            it = config.find("site");
+            if (it == config.end<json::OBJECT>() || !it->second.is_string())
+                co_return error::status_invalid_argument("maxbot(webhook):param 'site' is required");
+
+            site = std::move(it->second.as_string());
+
+            it = config.find("unsubscribe");
+            if (it != config.end<json::OBJECT>() && it->second.is_bool())
+                subscription_unsubscribe = it->second.as_bool();
+
+            it = config.find("secret");
+            if (it == config.end<json::OBJECT>() || it->second.is_string()) {
+                if (site.starts_with("https")) {
+                    char data[26 + 26 + 10 + 1];
+                    auto ptr = data;
+                    for (char i = 'a'; i <= 'z'; i++)
+                        *(ptr++) = i;
+                    for (char i = 'A'; i <= 'Z'; i++)
+                        *(ptr++) = i;
+                    for (char i = '0'; i <= '9'; i++)
+                        *(ptr++) = i;
+                    *ptr = '-';
+                    secret = manapi::string::random(256, std::string_view(data, sizeof (data)));
+                }
+                subscription_management = true;
+            }
+            else
+                secret = std::move(it->second.as_string());
+
+            auto router_res = manapi::net::http::server::create(std::move(ctx));
+            if (!router_res)
+                co_return router_res.err();
+
+            auto router = router_res.unwrap();
+
+            /* path can be 'test/', '', 'test/test/' */
+            path = std::format("/{}base", path);
+
+            res = router.GET(path, [] (http::req &req, http::uresp resp) -> manapi::future<> {
+                resp.finish();
+                co_return;
+            });
+
+            if (!res)
+                goto err;
+
+            this->data->server = std::make_unique<net::http::server>(router);
+
+            res = co_await router.config_object(std::move(http_cnf));
+            if (!res)
+                goto err;
+
+            res = co_await router.start();
+            if (!res)
+                goto err;
+
+            if (subscription_management) {
+                while (!site.empty() && site.back() == '/')
+                    site.pop_back();
+                site.append(path);
+                std::vector<std::string> update_types = {"message_created", "message_callback", "message_edited", "message_removed",
+                    "bot_added", "bot_removed", "user_added", "user_removed", "bot_started",
+                    "chat_title_changed", "message_chat_created"};
+                auto status = co_await this->subscribe(site, std::move(update_types), std::move(secret), manapi::async::timeout_cancellation(50000));
+                if (!status)
+                    co_return status.err();
+                auto data_res = status.unwrap();
+                if (!data_res.first) {
+                    manapi_log_error("%s due to %.*s", "maxbot(webhook):subscribe failed", data_res.second.size(), data_res.second.data());
+                    co_return error::status_unknown("maxbot(webhook):subscribe failed");
+                }
+                if (subscription_unsubscribe)
+                    this->data->webhook = std::move(site);
+                this->data->finish_id = manapi::async::current()->eventloop()->subscribe_finish([data = this->data] () -> manapi::future<> {
+                    try {
+                        manapi::maxbot mb (data);
+                        auto err = co_await mb.stop_and_wait();
+                        err.unwrap();
+                    }
+                    catch (std::exception const &e) {
+                        manapi_log_error("%s:%s failed due to %s", "maxbot(webhook)", "finish", e.what());
+                    }
+                });
+            }
+
+            co_return error::status_ok();
+        }
+        catch (std::bad_alloc const &) {
+            co_return error::status_resource_exhausted();
+        }
+        catch (std::exception const &e) {
+            manapi_log_error("%s due to %s", "maxbot:bind failed", e.what());
+            co_return error::status_internal("maxbot:bind failed");
+        }
+        err:
+        co_return std::move(res);
+    }
+
+    inline manapi::future<manapi::error::status> maxbot::bind(manapi::net::http::server_ctx ctx, std::string addr, std::string port, manapi::json config) {
+        manapi::json http_cnf = manapi::json::object();
+        http_cnf.insert("address", std::move(addr));
+        http_cnf.insert("port", std::move(port));
+        http_cnf.insert("http", manapi::json::array({"1.1"}));
+        http_cnf.insert("tcp_no_delay", true);
+        co_return co_await this->bind(std::move(ctx), std::move(config), std::move(http_cnf));
     }
 
     inline manapi::error::status maxbot::bind(std::size_t ms, std::size_t limit) MANAPIHTTP_NOEXCEPT {
         try {
+            if (this->data->server || this->data->timer)
+                return error::status_already_exists("maxbot:instance is already running");
             auto res = manapi::async::current()->timerpool()->append_timer_async(ms,
                 [data_ = this->data, ms_ = ms, marker = std::optional<int64_t>{}, limit] (manapi::timer t) mutable
                 -> manapi::future<> {
@@ -1180,11 +1391,85 @@ err:
         }
     }
 
-    inline void maxbot::stop() {
+    inline manapi::error::status maxbot::stop() MANAPIHTTP_NOEXCEPT {
+        try {
+            if (!this->data)
+                return error::status_invalid_argument("null");
+
+            if (this->data->timer) {
+                this->data->timer.stop();
+                this->data->timer = nullptr;
+                if (this->data->finish_id)
+                    manapi::async::current()->eventloop()->unsubscribe_finish(std::exchange(this->data->finish_id, 0));
+
+            }
+
+            if (this->data->server) {
+                manapi::async::run ([data = this->data] () -> manapi::future<> {
+                    try {
+                        if (data) {
+                            if (!data->webhook.empty()) {
+                                maxbot wb (data);
+                                auto r = co_await wb.unsubscribe(data->webhook, manapi::async::timeout_cancellation(60000));
+                                if (!r) {
+                                    manapi_log_error("%s:%s failed due to %.*s", "maxbot(webhook)", "stop", r.message().size(), r.message().data());
+                                }
+                                auto res = r.unwrap();
+                                if (!res.first) {
+                                    manapi_log_error("%s:%s failed due to %.*s", "maxbot(webhook)", "stop", res.second.size(), res.second.data());
+                                }
+                                data->webhook.clear();
+                            }
+                            if (data->server) {
+                                auto r = co_await data->server->stop();
+                                if (!r) {
+                                    manapi_log_error("%s:%s failed due to %.*s", "maxbot", "stop", r.msg().size(), r.msg().data());
+                                }
+                                data->server = nullptr;
+                            }
+                            if (data->finish_id)
+                                manapi::async::current()->eventloop()->unsubscribe_finish(std::exchange(data->finish_id, 0));
+                        }
+                    }
+                    catch (std::exception const &e) {
+                        manapi_log_error("%s:%s failed due to %s", "maxbot", "stop", e.what());
+                    }
+                });
+            }
+
+            return error::status_ok();
+        }
+        catch (std::exception const &) {
+            return error::status_resource_exhausted();
+        }
+    }
+
+    inline manapi::future<manapi::error::status> maxbot::stop_and_wait(manapi::async::cancellation_action cancellation) {
         if (this->data->timer) {
             this->data->timer.stop();
             this->data->timer = nullptr;
         }
+
+        if (!this->data->webhook.empty()) {
+            auto res = co_await this->unsubscribe(this->data->webhook, std::move(cancellation));
+            if (!res)
+                co_return res.err();
+            auto data = res.unwrap();
+            if (!data.first) {
+                manapi_log_error("%s due to %.*s", "maxbot(webhook):something gets wrong", data.second.size(), data.second.data());
+                co_return error::status_unknown("maxbot(webhook):something gets wrong");
+            }
+            co_return error::status_ok();
+        }
+
+        if (this->data->server) {
+            auto res = co_await this->data->server->stop();
+            if (res)
+                this->data->server = nullptr;
+            co_return std::move(res);
+        }
+
+        co_return error::status_ok();
     }
 
     inline manapi::future<manapi::error::status_or<manapi::json>> maxbot::me(manapi::async::cancellation_action cancellation) {
@@ -1307,22 +1592,27 @@ err:
         MANAPI_MAXBOT_STATUS_WRAP( fetch_get_bot_simple_(url, std::string{}, std::move(cancellation)));
     }
 
-    inline manapi::future<manapi::error::status_or<maxbot::response_status_t>> maxbot::subscribe(std::string url, std::vector<std::string> update_types, manapi::async::cancellation_action cancellation) {
+    inline manapi::future<manapi::error::status_or<maxbot::response_status_t>> maxbot::subscribe(std::string url, std::vector<std::string> update_types, std::string secret, manapi::async::cancellation_action cancellation) {
         std::string const purl = "/subscriptions";
 
         manapi::json update_types_json = manapi::json::array();
         for (auto &c : update_types)
             update_types_json.push_back(std::move(c));
 
-        MANAPI_MAXBOT_STATUS_WRAP_RES(fetch_post_bot_simple_(purl, manapi::json({
-                {"url", std::move(url)},
-                {"update_types", std::move(update_types_json)}
-            }).dump(), std::move(cancellation)));
+        auto data = manapi::json({
+            {"url", std::move(url)},
+            {"update_types", std::move(update_types_json)}
+        });
+
+        if (!secret.empty())
+            data.insert({"secret", std::move(secret)});
+
+        MANAPI_MAXBOT_STATUS_WRAP_RES(fetch_post_bot_simple_(purl, data.dump(), std::move(cancellation)));
     }
 
     inline manapi::future<manapi::error::status_or<maxbot::response_status_t>> maxbot::unsubscribe(std::string url, manapi::async::cancellation_action cancellation) {
-        std::string const purl = "/subscriptions";
-        MANAPI_MAXBOT_STATUS_WRAP_RES(fetch_delete_bot_simple_(purl, manapi::json ({{"url", std::move(url)}}).dump(), std::move(cancellation)));
+        std::string const purl = std::format("/subscriptions?url={}&", std::move(url));
+        MANAPI_MAXBOT_STATUS_WRAP_RES(fetch_delete_bot_simple_(purl, std::string{}, std::move(cancellation)));
     }
 
     inline manapi::future<manapi::error::status_or<manapi::json>>  maxbot::recv_updates(manapi::json data, manapi::async::cancellation_action cancellation) {

@@ -1,5 +1,5 @@
 [requires]
-manapihttp/0.0.2
+manapihttp/1.0.0
 
 [generators]
 CMakeDeps
