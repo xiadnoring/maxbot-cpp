@@ -1287,7 +1287,7 @@ namespace manapi {
             if (!res)
                 goto err;
 
-            this->data->secret = std::move(secret);
+            this->data->secret = secret;
             this->data->server = std::make_unique<net::http::server>(router);
 
             res = co_await router.config_object(std::move(http_cnf));
