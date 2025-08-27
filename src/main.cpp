@@ -1,7 +1,7 @@
 #include <iostream>
 
 #include <manapihttp/ManapiInitTools.hpp>
-#include <MaxBot.hpp>
+#include "MaxBot.hpp"
 
 int main() {
     manapi::init_tools::log_trace_init(manapi::debug::LOG_TRACE_LOW);
@@ -43,10 +43,11 @@ int main() {
                 std::string_view const cmd{text.as_string().data() + 1, text.as_string().size() - 1};
 
                 if (cmd == "start") {
-                    auto res_send = co_await self.send_message(user_id, chat_id, {
+                    auto jdata = manapi::json {
                         {"text", std::format("Hello, {}. You are here.\nWhat do you want to ask me?",
                             data["message"]["sender"]["first_name"].as_string())}
-                    });
+                    };
+                    auto res_send = co_await self.send_message(user_id, chat_id, std::move(jdata));
                     manapi::json response = (res_send.unwrap());
                 }
                 else if (cmd == "ai enable") {
@@ -56,7 +57,8 @@ int main() {
                     states.erase(user_id);
                 }
                 else {
-                    auto send_res = co_await self.send_message(user_id, chat_id, { {"text", std::format("Invalid command: {}", cmd)}});
+                    auto jdata = manapi::json{ {"text", std::format("Invalid command: {}", cmd)}};
+                    auto send_res = co_await self.send_message(user_id, chat_id, std::move(jdata));
                     manapi::json response = (send_res).unwrap();
                 }
 
@@ -76,7 +78,8 @@ int main() {
                     else
                         text = "no response";
 
-                    auto res_send = co_await self.send_message(user_id, chat_id, {{"text", text}});
+                    manapi::json jdata = {{"text", text}};
+                    auto res_send = co_await self.send_message(user_id, chat_id, std::move(jdata));
                     auto response = res_send.unwrap();
 
                     co_return true;
@@ -85,10 +88,11 @@ int main() {
                 ssize_t const from = std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count();
 
-                auto res_send = co_await self.get_messages(manapi::json {
+                auto jdata = manapi::json {
                     {"chat_id", chat_id},
                     {"count", 15}
-                });
+                };
+                auto res_send = co_await self.get_messages(std::move(jdata));
                 manapi::json history = res_send.unwrap();
 
                 manapi::json memory = manapi::json::array();
@@ -96,14 +100,14 @@ int main() {
                 for (auto &history_block : history["messages"].each()) {
                     if (history_block["sender"]["is_bot"].as_bool()) {
                         /* assistant */
-                        memory.push_back(manapi::json::object({
-                            {"role", "assistant"}
-                        }));
+                        jdata = manapi::json::object();
+                        jdata.insert("role", "assistant");
+                        memory.push_back(std::move(jdata));
                     }
                     else {
-                        memory.push_back(manapi::json::object({
-                            {"role", "user"}
-                        }));
+                        jdata = manapi::json::object();
+                        jdata.insert("role", "user");
+                        memory.push_back(std::move(jdata));
                     }
 
                     if (history_block["body"]["text"].is_string())
@@ -112,34 +116,37 @@ int main() {
                         (*memory.as_array().rbegin())["content"] = std::string{};
                 }
 
-                memory.push_back({
+                jdata = {
                     {"role", "user"},
                     {"content", std::move(data["message"]["body"]["text"])}
-                });
+                };
+                memory.push_back(std::move(jdata));
 
                 std::string err{};
 
                 try {
-                    auto jdata = manapi::json({
+                    jdata = manapi::json({
                         {"model", "deepseek/deepseek-r1-0528:free"},
                         {"messages", std::move(memory)}
                     });
-                    auto response_res = co_await manapi::net::fetch2::fetch("https://openrouter.ai/api/v1/chat/completions", {
+                    manapi::json jparams = {
                         {"headers", {
                             {"content-type", "application/json"},
                             {"authorization", std::format("Bearer {}", openrouter_key)}
                         }},
                         {"method", "POST"}
-                    }, jdata.dump());
+                    };
+                    auto response_res = co_await manapi::net::fetch2::fetch("https://openrouter.ai/api/v1/chat/completions", std::move(jparams), jdata.dump());
                     auto response = response_res.unwrap();
 
                     auto msg_res = co_await response.json();
                     auto msg = msg_res.unwrap();
                     std::string const text = std::move(std::move(msg["choices"][0]["message"]["content"].as_string()));
                     for (size_t pos = 0; pos < text.size(); pos+=4000) {
-                        auto send_res = co_await self.send_message(user_id, chat_id, {
+                        jdata={
                                {"text", text.substr(pos, 4000)},
-                        });
+                        };
+                        auto send_res = co_await self.send_message(user_id, chat_id, std::move(jdata));
                         send_res.unwrap();
                     }
                 }
@@ -148,18 +155,20 @@ int main() {
                 }
 
                 if (!err.empty()) {
-                    auto send_res = co_await self.send_message(user_id, chat_id, {
+                    jdata = {
                             {"text", std::format("error was occurred due to {}", err)},
-                    });
+                    };
+                    auto send_res = co_await self.send_message(user_id, chat_id, std::move(jdata));
                     manapi::json response = send_res.unwrap();
                 }
 
                 co_return true;
             });
 
-            auto res = co_await maxbot.bind(server_ctx, "127.0.0.1", "8888", {
+            auto jdata = manapi::json{
                 {"site", "http://127.0.0.1:8888"}
-            });
+            };
+            auto res = co_await maxbot.bind(server_ctx, "127.0.0.1", "8888", std::move(jdata));
             res.unwrap();
         });
 

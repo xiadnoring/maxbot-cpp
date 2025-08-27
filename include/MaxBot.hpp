@@ -253,6 +253,7 @@ namespace manapi {
         struct data_t {
             std::string token;
             std::string webhook;
+            std::string secret;
             manapi::timer timer;
             std::map<std::string, std::map<std::size_t, std::unique_ptr<action_cb_t>>> handlers;
             std::unique_ptr<manapi::net::http::server> server;
@@ -1094,6 +1095,8 @@ namespace manapi {
     private:
         static constexpr char service[] = "\01maxbot";
 
+        static manapi::future<> handle_update_ (std::shared_ptr<maxbot::data_t> data, manapi::json update);
+
         static manapi::future<> handle_updates_ (std::shared_ptr<maxbot::data_t> data, manapi::json updates);
 
         manapi::future<manapi::error::status_or<std::string>> fetch_custom_bot_simple_ (std::string_view url, std::string data, std::string method = {"GET"}, manapi::async::cancellation_action cancellation = nullptr);
@@ -1258,14 +1261,33 @@ namespace manapi {
             /* path can be 'test/', '', 'test/test/' */
             path = std::format("/{}base", path);
 
-            res = router.GET(path, [] (http::req &req, http::uresp resp) -> manapi::future<> {
-                resp.finish();
-                co_return;
+            res = router.POST(path, [maxbot_data = (this->data)] (http::req &req, http::resp &resp) mutable
+                -> manapi::future<> {
+              	try {
+              	    if (!maxbot_data->secret.empty()) {
+              	        auto hv = req.header("x-max-bot-api-secret").unwrap();
+              	        if (maxbot_data->secret != hv) {
+              	            resp.text("FAILED");
+              	            co_return;
+              	        }
+              	    }
+		            auto data_res = co_await req.json();
+		            auto data = data_res.unwrap();
+              	    manapi::async::run(maxbot::handle_update_(maxbot_data, std::move(data)));
+		            resp.text("OK").unwrap();
+              	    co_return;
+		        }
+		        catch(std::exception const &e){
+		            manapi_log_trace(manapi::debug::LOG_TRACE_LOW, "%s:%s failed due to %s", "maxbot", "webhook", e.what());
+		        }
+		        resp.text("FAILED").unwrap();
+		        co_return;
             });
 
             if (!res)
                 goto err;
 
+            this->data->secret = std::move(secret);
             this->data->server = std::make_unique<net::http::server>(router);
 
             res = co_await router.config_object(std::move(http_cnf));
@@ -1700,24 +1722,28 @@ err:
         MANAPI_MAXBOT_STATUS_WRAP_RES(fetch_post_bot_simple_(purl, data.dump(), std::move(cancellation)));
     }
 
+    inline manapi::future<> maxbot::handle_update_(std::shared_ptr<maxbot::data_t> data, manapi::json update) {
+        std::string const &update_type = update["update_type"].as_string();
+        auto const it = data->handlers.find(update_type);
+
+        if (it == data->handlers.end())
+            co_return ;
+
+        auto mbot = maxbot(data);
+        for (auto handler = it->second.begin(); handler != it->second.end(); ++handler) {
+            try {
+                if(co_await handler->second->operator()(mbot, update))
+                    break;
+            }
+            catch (std::exception const &e) {
+                manapi_log_error("%s due to %s", "unexpected error in the user handler callback", e.what());
+            }
+        }
+    }
+
     inline manapi::future<> maxbot::handle_updates_(std::shared_ptr<maxbot::data_t> data, manapi::json updates) {
         for (auto &update : updates.each()) {
-            std::string const &update_type = update["update_type"].as_string();
-            auto const it = data->handlers.find(update_type);
-
-            if (it == data->handlers.end())
-                continue;
-
-            auto mbot = maxbot(data);
-            for (auto handler = it->second.begin(); handler != it->second.end(); ++handler) {
-                try {
-                    if(co_await handler->second->operator()(mbot, update))
-                        break;
-                }
-                catch (std::exception const &e) {
-                    manapi_log_error("%s due to %s", "unexpected error in the user handler callback", e.what());
-                }
-            }
+            handle_update_ (data, std::move(update));
         }
     }
 
