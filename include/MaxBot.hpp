@@ -1347,10 +1347,11 @@ namespace manapi {
 
                         purl += '&';
 
-                        auto fetch_res = co_await manapi::net::fetch2::fetch(generate_url_(data_, purl), manapi::json({
+                        auto fetch_params = manapi::json({
                             {"method", "GET"},
                             {"timeout", timeout}
-                        }));
+                        });
+                        auto fetch_res = co_await manapi::net::fetch2::fetch(generate_url_(data_, purl), std::move(fetch_params));
                         auto fetch = (fetch_res).unwrap();
 
                         if (!fetch.ok()) {
@@ -1724,9 +1725,10 @@ err:
         std::optional<std::string> data_opt;
         if (!data.empty())
             data_opt = std::move(data);
-        auto fetch_res = co_await manapi::net::fetch2::fetch(manapi::maxbot::generate_url_(this->data, url), {
-                    {"method", std::move(method)}
-                }, std::move(data_opt), std::move(cancellation));
+        auto fetch_params = manapi::json ({
+            {"method", std::move(method)}
+        });
+        auto fetch_res = co_await manapi::net::fetch2::fetch(manapi::maxbot::generate_url_(this->data, url), std::move(fetch_params), std::move(data_opt), std::move(cancellation));
         if (!fetch_res)
             co_return fetch_res.err();
         auto fetch = fetch_res.unwrap();
