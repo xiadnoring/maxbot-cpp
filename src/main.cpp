@@ -120,16 +120,17 @@ int main() {
                 std::string err{};
 
                 try {
+                    auto jdata = manapi::json({
+                        {"model", "deepseek/deepseek-r1-0528:free"},
+                        {"messages", std::move(memory)}
+                    });
                     auto response_res = co_await manapi::net::fetch2::fetch("https://openrouter.ai/api/v1/chat/completions", {
                         {"headers", {
                             {"content-type", "application/json"},
                             {"authorization", std::format("Bearer {}", openrouter_key)}
                         }},
                         {"method", "POST"}
-                    }, manapi::json({
-                        {"model", "deepseek/deepseek-r1-0528:free"},
-                        {"messages", std::move(memory)}
-                    }).dump());
+                    }, jdata.dump());
                     auto response = response_res.unwrap();
 
                     auto msg_res = co_await response.json();
