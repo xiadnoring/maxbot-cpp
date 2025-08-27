@@ -1743,7 +1743,7 @@ err:
 
     inline manapi::future<> maxbot::handle_updates_(std::shared_ptr<maxbot::data_t> data, manapi::json updates) {
         for (auto &update : updates.each()) {
-            handle_update_ (data, std::move(update));
+            co_await handle_update_ (data, std::move(update));
         }
     }
 
