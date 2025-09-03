@@ -250,6 +250,11 @@ namespace manapi {
         using action_cb_t = std::move_only_function<manapi::future<bool>(maxbot &self, manapi::json &data)>;
         using response_status_t = std::pair<bool, std::string>;
 
+        struct upload_data_t {
+            std::string url;
+            std::optional<std::string> token;
+        };
+
         struct data_t {
             std::string token;
             std::string webhook;
@@ -907,7 +912,7 @@ namespace manapi {
          *
          * 
          */
-        manapi::future<manapi::error::status_or<std::string>> url_to_upload (std::string type, manapi::async::cancellation_action cancellation = nullptr);
+        manapi::future<manapi::error::status_or<upload_data_t>> url_to_upload (std::string type, manapi::async::cancellation_action cancellation = nullptr);
 
         /**
          * Возвращает сообщения в чате: страницу с результатами и маркер,
@@ -1092,12 +1097,38 @@ namespace manapi {
          * @return 
          */
         manapi::future<manapi::error::status_or<maxbot::response_status_t>> handle_callback (std::string callback_id, manapi::json data, manapi::async::cancellation_action cancellation = nullptr);
+
+        // /**
+        //  * Отправляет текстовое сообщение в чат
+        //  *
+        //  * @param user_id Если вы хотите отправить сообщение пользователю, укажите его ID
+        //  * @param chat_id Если сообщение отправляется в чат, укажите его ID
+        //  * @param disable_link_preview Если false, сервер не будет генерировать превью для ссылок в тексте сообщения
+        //  * @param text Текст запроса
+        //  * @param cancellation Токен отмены
+        //  * @return
+        //  *
+        //  *
+        //  */
+        // manapi::future<manapi::error::status_or<manapi::json>> send_text (int64_t user_id, int64_t chat_id, std::string text, bool disable_link_preview = false, manapi::async::cancellation_action cancellation = nullptr);
+
+        /**
+         * Загрузка файла на сервер
+         *
+         * @param filepath путь до файла
+         * @param udt Данные для загрузки
+         * @param token токен отмены
+         * @return
+         */
+        manapi::future<manapi::error::status> upload (std::string filepath, upload_data_t *udt, manapi::async::cancellation_action token = nullptr);
     private:
         static constexpr char service[] = "\01maxbot";
 
         static manapi::future<> handle_update_ (std::shared_ptr<maxbot::data_t> data, manapi::json update);
 
         static manapi::future<> handle_updates_ (std::shared_ptr<maxbot::data_t> data, manapi::json updates);
+
+        static manapi::future<manapi::error::status> gen_error_fetch_ (manapi::net::fetch2 &fetch);
 
         manapi::future<manapi::error::status_or<std::string>> fetch_custom_bot_simple_ (std::string_view url, std::string data, std::string method = {"GET"}, manapi::async::cancellation_action cancellation = nullptr);
 
@@ -1646,15 +1677,23 @@ err:
         MANAPI_MAXBOT_STATUS_WRAP(fetch_get_bot_simple_(purl, data.dump(), std::move(cancellation)));
     }
 
-    inline manapi::future<manapi::error::status_or<std::string>> maxbot::url_to_upload(std::string type, manapi::async::cancellation_action cancellation) {
-        std::string const purl = "/uploads";
-        auto jdata = manapi::json({{"type", std::move(type)}});
-        auto response = co_await fetch_post_bot_simple_(purl, jdata.dump(), std::move(cancellation));
+    inline manapi::future<manapi::error::status_or<manapi::maxbot::upload_data_t>> maxbot::url_to_upload(std::string type, manapi::async::cancellation_action cancellation) {
+        std::string const purl = std::format("/uploads?type={}&", type);
+        auto response = co_await fetch_post_bot_simple_(purl, std::string{}, std::move(cancellation));
         if (!response) { co_return response.err(); }
         auto data = manapi::json::parse(response.unwrap());
         if (!data) co_return data.err();
         auto obj = data.unwrap();
-        co_return obj["url"].as_string();
+
+        upload_data_t udt{};
+        auto it = obj.find("url");
+        if (it == obj.end<manapi::json::OBJECT>() || !it->second.is_string())
+            co_return error::status_internal("response:missing url");
+        udt.url = std::move(it->second.as_string());
+        it = obj.find("token");
+        if (it != obj.end<manapi::json::OBJECT>() && it->second.is_string())
+            udt.token = std::move(it->second.as_string());
+        co_return std::move(udt);
     }
 
     inline manapi::future<manapi::error::status_or<manapi::json>>  maxbot::get_messages(manapi::json data, manapi::async::cancellation_action cancellation) {
@@ -1722,6 +1761,41 @@ err:
         MANAPI_MAXBOT_STATUS_WRAP_RES(fetch_post_bot_simple_(purl, data.dump(), std::move(cancellation)));
     }
 
+    inline manapi::future<manapi::error::status> maxbot::upload(std::string filepath, upload_data_t *udt, manapi::async::cancellation_action token) {
+        manapi::json fparams = {{"method", "POST"}, {"verbose", true}};
+        net::fetch_formdata ffd{};
+        ffd.set_file("data", std::move(filepath));
+        auto response_res = co_await manapi::net::fetch2::fetch(udt->url, std::move(fparams), std::move(ffd));
+        if (!response_res.ok())
+            co_return response_res.err();
+        auto response = response_res.unwrap();
+        if (!response.ok())
+            co_return co_await maxbot::gen_error_fetch_(response);
+        auto data_res = co_await response.text();
+        if (!data_res.ok())
+            co_return data_res.err();
+        auto text = data_res.unwrap();
+        if (!text.empty()) {
+            auto data_res = manapi::json::parse(text);
+            if (data_res) {
+                auto data = data_res.unwrap();
+                auto it = data.find("photos");
+                if (it != data.end<manapi::json::OBJECT>() && it->second.is_object() && !it->second.empty()) {
+                    for (auto &jit : it->second.entries()) {
+                        if (jit.second.is_object()) {
+                            auto mit = jit.second.find("token");
+                            if(mit != jit.second.end<manapi::json::OBJECT>() && mit->second.is_string()) {
+                                udt->token = std::move(mit->second.as_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        co_return error::status_ok();
+    }
+
     inline manapi::future<> maxbot::handle_update_(std::shared_ptr<maxbot::data_t> data, manapi::json update) {
         std::string const &update_type = update["update_type"].as_string();
         auto const it = data->handlers.find(update_type);
@@ -1747,6 +1821,16 @@ err:
         }
     }
 
+    inline manapi::future<manapi::error::status> maxbot::gen_error_fetch_(manapi::net::fetch2 &fetch) {
+        std::string text;
+        auto text_res = co_await fetch.text();
+        manapi_log_trace(manapi::debug::LOG_TRACE_HIGH, "%s: %zu, %s", "maxbot service returned an invalid status code", fetch.status(), "let's grab a text response");
+        if (text_res)
+            text = text_res.unwrap();
+        manapi_log_error(manapi::debug::LOG_TRACE_HIGH, "%s: %zu, %.*s", "maxbot service returned an invalid status code", fetch.status(), text.size(), text.data());
+        co_return error::status_internal("maxbot service returned an invalid status code");
+    }
+
     inline manapi::future<manapi::error::status_or<std::string>> maxbot::fetch_custom_bot_simple_(std::string_view url, std::string data, std::string method, manapi::async::cancellation_action cancellation) {
         std::optional<std::string> data_opt;
         if (!data.empty())
@@ -1759,13 +1843,7 @@ err:
             co_return fetch_res.err();
         auto fetch = fetch_res.unwrap();
         if (!fetch.ok()) {
-            std::string text;
-            auto text_res = co_await fetch.text();
-            manapi_log_trace(manapi::debug::LOG_TRACE_HIGH, "%s: %zu, %s", "maxbot service returned an invalid status code", fetch.status(), "let's grab a text response");
-            if (text_res)
-                text = text_res.unwrap();
-            manapi_log_error(manapi::debug::LOG_TRACE_HIGH, "%s: %zu, %.*s", "maxbot service returned an invalid status code", fetch.status(), text.size(), text.data());
-            co_return error::status_internal("maxbot service returned an invalid status code");
+            co_return co_await maxbot::gen_error_fetch_(fetch);
         }
         co_return co_await fetch.text();
     }

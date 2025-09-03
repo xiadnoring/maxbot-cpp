@@ -28,6 +28,22 @@ int main() {
             maxbot.token(config["maxbot"].as_string());
             std::string openrouter_key = config["openrouter"].as_string();
 
+            maxbot.on("message_callback", [&states] (manapi::maxbot &self, manapi::json &data)
+                -> manapi::future<bool> {
+                auto const user_id = data["callback"]["user"]["user_id"].as_integer();
+                auto const chat_id = data["message"]["recipient"]["chat_id"].as_integer();
+                auto const &callback = data["callback"]["payload"];
+                if (callback.is_string()) {
+                    auto &command = callback.as_string();
+                    if (command == "call") {
+                        auto data_res = manapi::json {{"text", std::format("ai mode = {}", states.contains(user_id))}};
+                        auto send_res = co_await self.send_message(user_id, chat_id, data_res);
+                        manapi::json response = (send_res).unwrap();
+                    }
+                }
+                co_return true;
+            });
+
             maxbot.on("message_created", [&states](manapi::maxbot &self, manapi::json &data)
                     -> manapi::future<bool> {
                 auto const user_id = data["message"]["sender"]["user_id"].as_integer();
@@ -55,6 +71,65 @@ int main() {
                 }
                 else if (cmd == "ai disable") {
                     states.erase(user_id);
+                }
+                else if (cmd == "keyboard") {
+                    auto jdata = manapi::json{
+                        {"text", "keyboard test"},
+                        {"attachments", manapi::json::array({
+                            {
+                                {"type", "inline_keyboard"},
+                                {"payload", {
+                                    {"buttons", manapi::json::array({
+                                        manapi::json::array({
+                                            {
+                                                {"type", "callback"},
+                                                {"text", "Button"},
+                                                {"payload", "call"}
+                                            }
+                                        })
+                                    })}
+                                }}
+                            }
+                        })}
+                    };
+                    //std::cerr << jdata.dump(4) << "\n";
+                    auto send_res = co_await self.send_message(user_id, chat_id, std::move(jdata));
+                    manapi::json response = (send_res).unwrap();
+                }
+                else if (cmd =="video") {
+                    std::string video_path = manapi::filesystem::path::join("/home/Timur/Downloads/VideoDownloader/", "lomka.mp4");
+                    auto udt_res = co_await self.url_to_upload("video");
+                    auto udt = udt_res.unwrap();
+                    auto upload_res = co_await self.upload(video_path, &udt);
+                    upload_res.unwrap();
+                    co_await manapi::async::delay{1500};
+                    auto jdata = manapi::json{ {"text", "Lomka Video"}, {"attachments", manapi::json::array({
+                        {
+                            {"type", "video"},
+                            {"payload", {
+                                {"token", udt.token.value()}
+                            }}
+                        }
+                    })}};
+                    auto send_res = co_await self.send_message(user_id, chat_id, std::move(jdata));
+                    manapi::json response = (send_res).unwrap();
+                }
+                else if (cmd =="image") {
+                    std::string image_path = manapi::filesystem::path::join("/home/Timur/Pictures/", "photo_2025-04-02_17-48-39.jpg");
+                    auto udt_res = co_await self.url_to_upload("image");
+                    auto udt = udt_res.unwrap();
+                    auto upload_res = co_await self.upload(std::move(image_path), &udt);
+                    upload_res.unwrap();
+                    auto jdata = manapi::json{ {"text", "Lomka Video"}, {"attachments", manapi::json::array({
+                        {
+                            {"type", "image"},
+                            {"payload", {
+                                {"token", udt.token.value()}
+                            }}
+                        }
+                    })}};
+                    auto send_res = co_await self.send_message(user_id, chat_id, std::move(jdata));
+                    manapi::json response = (send_res).unwrap();
                 }
                 else {
                     auto jdata = manapi::json{ {"text", std::format("Invalid command: {}", cmd)}};
@@ -165,11 +240,7 @@ int main() {
                 co_return true;
             });
 
-            auto jdata = manapi::json{
-                {"site", "http://127.0.0.1:8888"}
-            };
-            auto res = co_await maxbot.bind(server_ctx, "127.0.0.1", "8888", std::move(jdata));
-            res.unwrap();
+            maxbot.bind (500).unwrap();
         });
 
         cb();
