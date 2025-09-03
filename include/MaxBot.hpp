@@ -1762,38 +1762,45 @@ err:
     }
 
     inline manapi::future<manapi::error::status> maxbot::upload(std::string filepath, upload_data_t *udt, manapi::async::cancellation_action token) {
-        manapi::json fparams = {{"method", "POST"}, {"verbose", true}};
-        net::fetch_formdata ffd{};
-        ffd.set_file("data", std::move(filepath));
-        auto response_res = co_await manapi::net::fetch2::fetch(udt->url, std::move(fparams), std::move(ffd));
-        if (!response_res.ok())
-            co_return response_res.err();
-        auto response = response_res.unwrap();
-        if (!response.ok())
-            co_return co_await maxbot::gen_error_fetch_(response);
-        auto data_res = co_await response.text();
-        if (!data_res.ok())
-            co_return data_res.err();
-        auto text = data_res.unwrap();
-        if (!text.empty()) {
-            auto data_res = manapi::json::parse(text);
-            if (data_res) {
-                auto data = data_res.unwrap();
-                auto it = data.find("photos");
-                if (it != data.end<manapi::json::OBJECT>() && it->second.is_object() && !it->second.empty()) {
-                    for (auto &jit : it->second.entries()) {
-                        if (jit.second.is_object()) {
-                            auto mit = jit.second.find("token");
-                            if(mit != jit.second.end<manapi::json::OBJECT>() && mit->second.is_string()) {
-                                udt->token = std::move(mit->second.as_string());
-                                break;
+        manapi::json fparams = {{"method", "POST"}};
+        while (true) {
+            net::fetch_formdata ffd{};
+            ffd.set_file("data", (filepath));
+            auto response_res = co_await manapi::net::fetch2::fetch(udt->url, std::move(fparams), std::move(ffd));
+            if (!response_res.ok())
+                co_return response_res.err();
+            auto response = response_res.unwrap();
+            if (!response.ok()) {
+                auto err = co_await maxbot::gen_error_fetch_(response);
+                if (err.msg() == "retry") {
+                    co_await async::delay{1000};
+                    continue;
+                }
+            }
+            auto data_res = co_await response.text();
+            if (!data_res.ok())
+                co_return data_res.err();
+            auto text = data_res.unwrap();
+            if (!text.empty()) {
+                auto data_res = manapi::json::parse(text);
+                if (data_res) {
+                    auto data = data_res.unwrap();
+                    auto it = data.find("photos");
+                    if (it != data.end<manapi::json::OBJECT>() && it->second.is_object() && !it->second.empty()) {
+                        for (auto &jit : it->second.entries()) {
+                            if (jit.second.is_object()) {
+                                auto mit = jit.second.find("token");
+                                if(mit != jit.second.end<manapi::json::OBJECT>() && mit->second.is_string()) {
+                                    udt->token = std::move(mit->second.as_string());
+                                    break;
+                                }
                             }
                         }
                     }
                 }
             }
+            co_return error::status_ok();
         }
-        co_return error::status_ok();
     }
 
     inline manapi::future<> maxbot::handle_update_(std::shared_ptr<maxbot::data_t> data, manapi::json update) {
@@ -1827,25 +1834,39 @@ err:
         manapi_log_trace(manapi::debug::LOG_TRACE_HIGH, "%s: %zu, %s", "maxbot service returned an invalid status code", fetch.status(), "let's grab a text response");
         if (text_res)
             text = text_res.unwrap();
+        auto data_res = manapi::json::parse(text);
+        if (data_res) {
+            auto data = data_res.unwrap();
+            if (data["code"] == "attachment.not.ready")
+                co_return error::status_unavailable("retry");
+        }
         manapi_log_error(manapi::debug::LOG_TRACE_HIGH, "%s: %zu, %.*s", "maxbot service returned an invalid status code", fetch.status(), text.size(), text.data());
         co_return error::status_internal("maxbot service returned an invalid status code");
     }
 
     inline manapi::future<manapi::error::status_or<std::string>> maxbot::fetch_custom_bot_simple_(std::string_view url, std::string data, std::string method, manapi::async::cancellation_action cancellation) {
-        std::optional<std::string> data_opt;
-        if (!data.empty())
-            data_opt = std::move(data);
         auto fetch_params = manapi::json ({
             {"method", std::move(method)}
         });
-        auto fetch_res = co_await manapi::net::fetch2::fetch(manapi::maxbot::generate_url_(this->data, url), std::move(fetch_params), std::move(data_opt), std::move(cancellation));
-        if (!fetch_res)
-            co_return fetch_res.err();
-        auto fetch = fetch_res.unwrap();
-        if (!fetch.ok()) {
-            co_return co_await maxbot::gen_error_fetch_(fetch);
+
+        std::optional<std::string> data_opt;
+        if (!data.empty())
+            data_opt = std::move(data);
+
+        while (true) {
+            auto fetch_res = co_await manapi::net::fetch2::fetch(manapi::maxbot::generate_url_(this->data, url), (fetch_params), (data_opt), std::move(cancellation));
+            if (!fetch_res)
+                co_return fetch_res.err();
+            auto fetch = fetch_res.unwrap();
+            if (!fetch.ok()) {
+                auto err = co_await maxbot::gen_error_fetch_(fetch);
+                if (err.msg() == "retry") {
+                    co_await async::delay{1000};
+                    continue;
+                }
+            }
+            co_return co_await fetch.text();
         }
-        co_return co_await fetch.text();
     }
 
     inline manapi::future<manapi::error::status_or<std::string>> maxbot::fetch_post_bot_simple_(std::string_view url, std::string data, manapi::async::cancellation_action cancellation) {

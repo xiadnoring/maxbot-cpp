@@ -102,7 +102,7 @@ int main() {
                     auto udt = udt_res.unwrap();
                     auto upload_res = co_await self.upload(video_path, &udt);
                     upload_res.unwrap();
-                    co_await manapi::async::delay{1500};
+
                     auto jdata = manapi::json{ {"text", "Lomka Video"}, {"attachments", manapi::json::array({
                         {
                             {"type", "video"},
