@@ -21,9 +21,9 @@ int main() {
     manapi::init_tools::log_trace_init(manapi::debug::LOG_TRACE_LOW);
 
     manapi::async::context::threadpoolfs(2);
-    manapi::async::context::gbs = manapi::async::context::blockedsignals();
+    manapi::async::context::gbs(manapi::async::context::blockedsignals());
 
-    auto ctx = manapi::async::context::create(2).unwrap();
+    auto ctx = manapi::async::context::create(0).unwrap();
     ctx->eventloop()->setup_handle_interrupt();
 
     ctx->run(ctx, 0, [] (auto cb) -> void {
